@@ -1,47 +1,49 @@
-from datetime import datetime
+from config import MAX_RISK_PER_TRADE, TAKE_PROFIT_PCT, STOP_LOSS_PCT
+from trading.database import (
+    get_account, open_trade_db, close_trade_db, get_open_trades
+)
+from trading.analyzer import get_live_price, analyze_asset
 
-class TradingSimulator:
-    def __init__(self, initial_capital):
-        self.initial_capital = initial_capital
-        self.capital = initial_capital
-        self.open_positions = []
-        self.history = []
+def calculate_position_size(capital: float) -> float:
+    return round(capital * MAX_RISK_PER_TRADE, 2)
 
-    def open_trade(self, ticker, side, price, amount_usd):
-        if amount_usd > self.capital or amount_usd <= 0:
-            return False
-        qty = amount_usd / price
-        self.capital -= amount_usd
-        position = {
-            "id": len(self.history) + len(self.open_positions) + 1,
-            "ticker": ticker,
-            "side": side,
-            "entry_price": price,
-            "qty": qty,
-            "invested": amount_usd,
-            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        }
-        self.open_positions.append(position)
-        return True
+def evaluate_open_trades():
+    open_trades = get_open_trades()
+    results = []
+    for t in open_trades:
+        live = get_live_price(t["ticker"])
+        if live is None:
+            live = t["entry_price"]
+        if t["side"] == "COMPRAR":
+            pct = (live - t["entry_price"]) / t["entry_price"]
+        else:
+            pct = (t["entry_price"] - live) / t["entry_price"]
+        floating_pnl = round(t["amount"] * pct, 2)
 
-    def close_trade(self, position_id, current_price):
-        for pos in self.open_positions:
-            if pos["id"] == position_id:
-                exit_value = pos["qty"] * current_price
-                pnl = exit_value - pos["invested"] if pos["side"] == "COMPRAR" else pos["invested"] - exit_value
-                self.capital += (pos["invested"] + pnl)
-                self.open_positions.remove(pos)
-                record = {
-                    **pos,
-                    "exit_price": current_price,
-                    "pnl": round(pnl, 2),
-                    "closed_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                }
-                self.history.append(record)
-                return pnl
-        return 0.0
+        if pct >= TAKE_PROFIT_PCT:
+            close_trade_db(t["id"], live, reason="Take Profit (+4%)")
+        elif pct <= -STOP_LOSS_PCT:
+            close_trade_db(t["id"], live, reason="Stop Loss (-2%)")
+        else:
+            t["live_price"] = live
+            t["floating_pnl"] = floating_pnl
+            t["floating_pct"] = round(pct * 100, 2)
+            results.append(t)
+    return results
 
-    def close_all_positions(self, current_prices):
-        for pos in list(self.open_positions):
-            price = current_prices.get(pos["ticker"], pos["entry_price"])
-            self.close_trade(pos["id"], price)
+def run_autopilot_cycle(markets: dict):
+    acc = get_account()
+    if acc["emergency_stop"] or not acc["auto_pilot"]:
+        return
+    evaluate_open_trades()
+    for market_name, tickers in markets.items():
+        for ticker in tickers:
+            acc = get_account()
+            open_list = get_open_trades()
+            if len(open_list) >= 5:
+                return
+            res = analyze_asset(ticker)
+            if res and res["signal"] in ("COMPRAR", "VENDER"):
+                size = calculate_position_size(acc["capital"])
+                if size >= 10:
+                    open_trade_db(ticker, res["signal"], res["price"], size)
