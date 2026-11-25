@@ -1,6 +1,5 @@
-
- import streamlit as st
-from config import (
+  import streamlit as st
+  from config import (
     INITIAL_CAPITAL,
     MAX_RISK_PER_TRADE,
     MAX_DAILY_LOSS,
@@ -11,7 +10,7 @@ from config import (
     WEEKLY_TARGET_PCT,
     MARKETS,
 )
-from trading.database import (
+  from trading.database import (
     init_db,
     get_account,
     set_emergency_stop,
@@ -22,14 +21,14 @@ from trading.database import (
     get_period_summary,
     get_archived_trades,
 )
-from trading.simulator import (
+  from trading.simulator import (
     calculate_risk_budget,
     calculate_position_size,
     evaluate_open_trades,
 )
 
 
-def _compute_period_stats(period_type: str, fallback_capital: float):
+  def _compute_period_stats(period_type: str, fallback_capital: float):
     snap = get_period_summary(period_type)
     if not snap:
         return {
@@ -49,7 +48,7 @@ def _compute_period_stats(period_type: str, fallback_capital: float):
     }
 
 
-def evaluate_risk_traffic_light(acc: dict, daily_stats: dict, weekly_stats: dict, open_count: int):
+  def evaluate_risk_traffic_light(acc: dict, daily_stats: dict, weekly_stats: dict, open_count: int):
     daily_loss_used = max(0.0, -daily_stats["pnl_pct"])
     weekly_loss_used = max(0.0, -weekly_stats["pnl_pct"])
 
@@ -63,7 +62,7 @@ def evaluate_risk_traffic_light(acc: dict, daily_stats: dict, weekly_stats: dict
     return "🟢", "Operativo / Dentro de parámetros", "Riesgo diario, semanal y exposición simultánea dentro de los límites V2."
 
 
-def render_performance_and_risk_center():
+  def render_performance_and_risk_center():
     init_db()
     acc = get_account()
     capital = acc["capital"] if acc else INITIAL_CAPITAL
