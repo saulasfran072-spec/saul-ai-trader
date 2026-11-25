@@ -1,4 +1,3 @@
-
 import streamlit as st
 from config import (
     INITIAL_CAPITAL,
