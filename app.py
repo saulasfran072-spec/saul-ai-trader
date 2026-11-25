@@ -1,5 +1,5 @@
-import streamlit as st
-from config import (
+  import streamlit as st
+  from config import (
     INITIAL_CAPITAL,
     MAX_RISK_PER_TRADE,
     MAX_DAILY_LOSS,
@@ -10,7 +10,7 @@ from config import (
     WEEKLY_TARGET_PCT,
     MARKETS,
 )
-from trading.database import (
+  from trading.database import (
     init_db,
     get_account,
     set_emergency_stop,
@@ -21,7 +21,7 @@ from trading.database import (
     get_period_summary,
     get_archived_trades,
 )
-from trading.simulator import (
+  from trading.simulator import (
     calculate_risk_budget,
     calculate_position_size,
     evaluate_open_trades,
