@@ -2,8 +2,7 @@ import streamlit as st
 st.set_page_config(
     page_title="SAUL AI TRADER",
     page_icon="📈",
-    layout="wide"
-)
+    layout="wide")
 
 st.title("SAUL AI TRADER")
 st.subheader("Sistema de Trading V2")
