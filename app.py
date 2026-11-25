@@ -1,4 +1,4 @@
-  import streamlit as st
+import streamlit as st
   from config import (
     INITIAL_CAPITAL,
     MAX_RISK_PER_TRADE,
