@@ -8,8 +8,7 @@ from config import (
     TAKE_PROFIT_PCT,
     STOP_LOSS_PCT,
     WEEKLY_TARGET_PCT,
-    MARKETS,
-)
+    MARKETS,)
 from trading.database import (
     init_db,
     get_account,
@@ -19,13 +18,11 @@ from trading.database import (
     get_open_trades,
     get_closed_trades,
     get_period_summary,
-    get_archived_trades,
-)
+    get_archived_trades,)
 from trading.simulator import (
     calculate_risk_budget,
     calculate_position_size,
-    evaluate_open_trades,
-)
+    evaluate_open_trades,)
 
 def _compute_period_stats(period_type: str, fallback_capital: float):
     snap = get_period_summary(period_type)
@@ -34,8 +31,7 @@ def _compute_period_stats(period_type: str, fallback_capital: float):
             "starting_equity": fallback_capital,
             "ending_equity": fallback_capital,
             "realized_pnl": 0.0,
-            "pnl_pct": 0.0,
-        }
+            "pnl_pct": 0.0,}
     start_eq = snap["starting_equity"] if snap["starting_equity"] and snap["starting_equity"] > 0 else fallback_capital
     realized = snap["realized_pnl"] or 0.0
     pnl_pct = realized / start_eq if start_eq > 0 else 0.0
@@ -43,8 +39,7 @@ def _compute_period_stats(period_type: str, fallback_capital: float):
         "starting_equity": start_eq,
         "ending_equity": snap["ending_equity"] or fallback_capital,
         "realized_pnl": realized,
-        "pnl_pct": pnl_pct,
-    }
+        "pnl_pct": pnl_pct,}
 
 def evaluate_risk_traffic_light(acc: dict, daily_stats: dict, weekly_stats: dict, open_count: int):
     daily_loss_used = max(0.0, -daily_stats["pnl_pct"])
