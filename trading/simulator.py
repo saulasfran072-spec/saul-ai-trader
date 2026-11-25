@@ -69,11 +69,10 @@ def run_autopilot_cycle(markets: dict):
                 return
 
             res = analyze_asset(ticker)
-            if res and res["signal"] in ("COMPRAR", "VENDER"):
+            if res and res.get("signal") in ("COMPRAR", "VENDER"):
                 price = res.get("price")
                 if price is None or price <= 0:
                     continue
                 size = calculate_position_size(acc["capital"])
                 if size >= 10 and acc["capital"] >= size:
                     open_trade_db(ticker, res["signal"], price, size)
-        
