@@ -25,7 +25,7 @@ calculate_position_size,
 evaluate_open_trades,)
 
 def _compute_period_stats(period_type: str, fallback_capital: float):
-snap = get_period_summary(period_type)
+    snap = get_period_summary(period_type)
 if not snap:
 return {
 "starting_equity": fallback_capital,
