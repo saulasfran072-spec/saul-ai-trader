@@ -1,6 +1,10 @@
 import sqlite3
 from datetime import datetime, timedelta
-from config import INITIAL_CAPITAL, MAX_OPEN_TRADES
+
+try:
+    from config import INITIAL_CAPITAL, MAX_OPEN_TRADES
+except ImportError:
+    from ..config import INITIAL_CAPITAL, MAX_OPEN_TRADES
 
 DB_PATH = "saul_trader.db"
 
@@ -262,4 +266,4 @@ def get_archived_trades():
     rows = conn.execute("SELECT * FROM trade_archive ORDER BY id DESC").fetchall()
     conn.close()
     return [dict(r) for r in rows]
-            
+    
