@@ -1,4 +1,5 @@
 # Configu# Configuración de seguridad y reglas de SAUL AI TRADER (V2)
+# Configuración de seguridad y reglas de SAUL AI TRADER (V2)
 INITIAL_CAPITAL = 10000.0
 MAX_RISK_PER_TRADE = 0.005    # 0.5% de riesgo real por operación
 MAX_DAILY_LOSS = 0.01         # 1% límite de pérdida diaria máxima
@@ -14,6 +15,4 @@ MARKETS = {
     "Acciones": ["AAPL", "MSFT", "NVDA", "TSLA"],
     "Materias Primas": ["GC=F", "CL=F", "SI=F"],
     "Forex": ["EURUSD=X", "JPY=X", "GBPUSD=X"]
-}
-ración de seguridad y reglas de SAUL AI TRADER v2
 }
