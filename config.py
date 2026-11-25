@@ -1,4 +1,3 @@
-# Configu# Configuración de seguridad y reglas de SAUL AI TRADER (V2)
 # Configuración de seguridad y reglas de SAUL AI TRADER (V2)
 INITIAL_CAPITAL = 10000.0
 MAX_RISK_PER_TRADE = 0.005    # 0.5% de riesgo real por operación
