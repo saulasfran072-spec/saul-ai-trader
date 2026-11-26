@@ -1,27 +1,26 @@
 import streamlit as st
 
-from config import (
-    INITIAL_CAPITAL,
-    MAX_RISK_PER_TRADE,
-    MAX_DAILY_LOSS,
-    MAX_WEEKLY_LOSS,
-    MAX_OPEN_TRADES,
-    TAKE_PROFIT_PCT,
-    STOP_LOSS_PCT,
-    WEEKLY_TARGET_PCT,
-    MARKETS,
-)
+from config import INITIAL_CAPITAL
+from trading.database import init_db, get_account
 
 st.set_page_config(page_title="SAUL AI TRADER V2")
 
 st.title("📈 SAUL AI TRADER V2")
 
-st.success("¡Conexión con config.py exitosa!")
+try:
+    init_db()
+    account = get_account()
 
-st.write("Capital inicial:", INITIAL_CAPITAL)
-st.write("Riesgo por operación:", MAX_RISK_PER_TRADE)
-st.write("Pérdida diaria máxima:", MAX_DAILY_LOSS)
-st.write("Operaciones máximas:", MAX_OPEN_TRADES)
+    st.success("¡Base de datos conectada correctamente!")
 
-st.write("Mercados disponibles:")
-st.json(MARKETS)
+    st.write("Capital inicial:", INITIAL_CAPITAL)
+
+    if account:
+        st.write("Datos de la cuenta:")
+        st.write(dict(account))
+    else:
+        st.warning("Base conectada, pero todavía no hay una cuenta creada.")
+
+except Exception as e:
+    st.error("Error al conectar la base de datos")
+    st.exception(e)
