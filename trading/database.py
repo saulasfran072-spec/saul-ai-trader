@@ -415,6 +415,24 @@ def init_db():
 
     init_protected_funds_db(conn)
 
+    # ==========================================
+    # HISTORIAL DE PATRIMONIO
+    # ==========================================
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS equity_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT NOT NULL,
+            capital REAL NOT NULL,
+            invested REAL NOT NULL,
+            floating_pnl REAL NOT NULL,
+            protected REAL NOT NULL,
+            equity REAL NOT NULL,
+            usd_ars_rate REAL,
+            equity_ars REAL
+        )
+    """)
+
     cur.execute("SELECT COUNT(*) FROM account")
 
     if cur.fetchone()[0] == 0:
@@ -852,6 +870,8 @@ def get_archived_trades():
     conn.close()
 
     return [dict(row) for row in rows]
+
+
 # ==========================================
 # PROTEGER GANANCIAS DISPONIBLES
 # ==========================================
@@ -890,3 +910,32 @@ def protect_eligible_profits():
 
     finally:
         conn.close()
+
+
+# ==========================================
+# HISTORIAL DE PATRIMONIO
+# ==========================================
+
+def record_equity_point(
+    capital,
+    invested,
+    floating_pnl,
+    protected,
+    usd_ars_rate=None
+):
+    conn = get_conn()
+
+    try:
+        now = datetime.now()
+
+        last = conn.execute("""
+            SELECT timestamp
+            FROM equity_history
+            ORDER BY id DESC
+            LIMIT 1
+        """).fetchone()
+
+        # Registrar como máximo un punto cada 60 segundos.
+        if last:
+            last_time = datetime.strptime(
+                last["timesta
