@@ -852,3 +852,41 @@ def get_archived_trades():
     conn.close()
 
     return [dict(row) for row in rows]
+# ==========================================
+# PROTEGER GANANCIAS DISPONIBLES
+# ==========================================
+
+def protect_eligible_profits():
+    """
+    Comprueba y protege ganancias realizadas
+    cuando se alcanza el umbral configurado.
+    """
+
+    conn = get_conn()
+
+    try:
+        amount = _lock_eligible_profits(conn)
+
+        if amount > 0:
+            account = conn.execute("""
+                SELECT capital
+                FROM account
+                WHERE id = 1
+            """).fetchone()
+
+            if account:
+                _sync_snapshots(
+                    conn,
+                    account["capital"],
+                    0.0
+                )
+
+        conn.commit()
+        return amount
+
+    except Exception:
+        conn.rollback()
+        raise
+
+    finally:
+        conn.close()
