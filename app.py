@@ -1,36 +1,43 @@
 import streamlit as st
 
-from trading.analyzer import get_live_price, analyze_asset
-
-st.set_page_config(page_title="SAUL AI TRADER V2")
-
-st.title("📈 SAUL AI TRADER V2")
-st.subheader("Prueba 5: Análisis de mercado")
-
-ticker = st.selectbox(
-    "Seleccionar activo",
-    ["BTC-USD", "ETH-USD", "SOL-USD", "AAPL", "NVDA"]
+from config import INITIAL_CAPITAL
+from trading.database import init_db, get_account, get_open_trades
+from trading.simulator import (
+    calculate_risk_budget,
+    calculate_position_size,
+    evaluate_open_trades,
+    check_loss_limits,
+    run_autopilot_cycle,
 )
 
-if st.button("Analizar mercado"):
-    with st.spinner("Consultando mercado..."):
+st.set_page_config(
+    page_title="SAUL AI TRADER V2",
+    page_icon="📈"
+)
 
-        price = get_live_price(ticker)
-        analysis = analyze_asset(ticker)
+st.title("📈 SAUL AI TRADER V2")
+st.subheader("Prueba 6: Conexión completa")
 
-        if price is not None:
-            st.metric("Precio actual", f"${price:,.2f}")
-        else:
-            st.warning("No se pudo obtener el precio.")
+try:
+    init_db()
 
-        if analysis:
-            st.success("¡Análisis completado!")
+    account = get_account()
 
-            st.write("Señal:", analysis["signal"])
-            st.write("RSI:", analysis["rsi"])
-            st.write("SMA 7:", analysis["sma_7"])
-            st.write("SMA 20:", analysis["sma_20"])
+    risk = calculate_risk_budget(INITIAL_CAPITAL)
+    position = calculate_position_size(INITIAL_CAPITAL)
 
-            st.json(analysis)
-        else:
-            st.error("No se pudo completar el análisis.")
+    st.success("¡Conexión con el simulador exitosa!")
+
+    st.metric("Capital inicial", f"${INITIAL_CAPITAL:,.2f}")
+    st.metric("Capital disponible", f"${account['capital']:,.2f}")
+    st.metric("Riesgo por operación", f"${risk:,.2f}")
+    st.metric("Tamaño de posición", f"${position:,.2f}")
+
+    st.write("Operaciones abiertas:", len(get_open_trades()))
+
+    st.write("Estado del piloto automático:",
+             "Activado" if account["auto_pilot"] else "Desactivado")
+
+except Exception as e:
+    st.error("Error en la conexión")
+    st.exception(e)
