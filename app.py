@@ -22,7 +22,9 @@ from trading.database import (
     get_protected_funds_summary,
     get_protected_funds_history,
     release_protected_funds,
-    protect_eligible_profits
+    protect_eligible_profits,
+    record_equity_point,
+    get_equity_history
 )
 
 from trading.analyzer import get_live_price
@@ -234,6 +236,105 @@ equity = (
 )
 
 rates = get_dollar_rates()
+
+
+# ==========================================
+# REGISTRO DEL HISTORIAL DE PATRIMONIO
+# ==========================================
+
+usd_ars_rate = None
+
+for currency in ["Blue", "MEP", "Oficial"]:
+
+    if currency in rates:
+        usd_ars_rate = rates[currency]["compra"]
+        break
+
+
+record_equity_point(
+    capital=capital,
+    invested=invested,
+    floating_pnl=floating_pnl,
+    protected=protected_balance,
+    usd_ars_rate=usd_ars_rate
+)
+
+
+# ==========================================
+# GRÁFICOS DE EVOLUCIÓN DEL PATRIMONIO
+# ==========================================
+
+st.subheader("📈 Evolución del patrimonio")
+
+history = get_equity_history(limit=1000)
+
+if history:
+
+    history_df = pd.DataFrame(history)
+
+    history_df["timestamp"] = pd.to_datetime(
+        history_df["timestamp"]
+    )
+
+    history_df = history_df.set_index("timestamp")
+
+    graph_usd, graph_ars = st.columns(2)
+
+    with graph_usd:
+
+        st.markdown("#### 💵 Patrimonio en USD")
+
+        st.line_chart(
+            history_df[["equity"]],
+            use_container_width=True
+        )
+
+        st.metric(
+            "Patrimonio actual",
+            money_usd(equity)
+        )
+
+    with graph_ars:
+
+        st.markdown("#### 💱 Patrimonio en ARS")
+
+        if (
+            "equity_ars" in history_df.columns
+            and history_df["equity_ars"].notna().any()
+        ):
+
+            st.line_chart(
+                history_df[["equity_ars"]],
+                use_container_width=True
+            )
+
+            if usd_ars_rate:
+
+                st.metric(
+                    "Patrimonio actual",
+                    money_ars(equity * usd_ars_rate)
+                )
+
+        else:
+
+            st.info(
+                "El historial en pesos aparecerá "
+                "cuando se registre una cotización válida."
+            )
+
+    st.caption(
+        "Historial registrado por SAUL AI TRADER. "
+        "La conversión a ARS es estimativa."
+    )
+
+else:
+
+    st.info(
+        "El gráfico aparecerá cuando se registre "
+        "el primer punto de patrimonio."
+    )
+
+st.divider()
 
 
 # ==========================================
