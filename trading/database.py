@@ -14,23 +14,55 @@ def get_conn():
     conn.row_factory = sqlite3.Row
     return conn
 
+def _sync_snapshots(conn, current_capital: float, realized_pnl_delta: float = 0.0):
+    now = datetime.now()
+    day_key = now.strftime("%Y-%m-%d")
+    monday = now - timedelta(days=now.weekday())
+    week_key = monday.strftime("%Y-W%W")
 
-def _record_snapshot(conn, period_type: str, period_key: str, starting_equity: float, ending_equity: float, realized_pnl: float):
-    conn.execute("""
-        INSERT INTO snapshots (period_type, period_key, starting_equity, ending_equity, realized_pnl, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-        ON CONFLICT(period_type, period_key) DO UPDATE SET
-            ending_equity = excluded.ending_equity,
-            realized_pnl = excluded.realized_pnl,
-            updated_at = excluded.updated_at
-    """, (
-        period_type,
-        period_key,
-        round(starting_equity, 2),
-        round(ending_equity, 2),
-        round(realized_pnl, 2),
-        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-    ))
+    # El dinero invertido en operaciones abiertas sigue siendo
+    # parte del patrimonio de la cuenta.
+    invested = conn.execute("""
+        SELECT COALESCE(SUM(amount), 0)
+        FROM trades
+        WHERE status = 'ABIERTA'
+    """).fetchone()[0]
+
+    total_equity = round(current_capital + invested, 2)
+
+    for p_type, p_key in [("daily", day_key), ("weekly", week_key)]:
+        row = conn.execute(
+            """
+            SELECT starting_equity, realized_pnl
+            FROM snapshots
+            WHERE period_type = ? AND period_key = ?
+            """,
+            (p_type, p_key),
+        ).fetchone()
+
+        if row is None:
+            _record_snapshot(
+                conn,
+                p_type,
+                p_key,
+                total_equity,
+                total_equity,
+                realized_pnl_delta,
+            )
+        else:
+            new_pnl = round(
+                row["realized_pnl"] + realized_pnl_delta, 2
+            )
+
+            _record_snapshot(
+                conn,
+                p_type,
+                p_key,
+                row["starting_equity"],
+                total_equity,
+                new_pnl,
+    )
+
 
 
 def _sync_snapshots(conn, current_capital: float, realized_pnl_delta: float = 0.0):
