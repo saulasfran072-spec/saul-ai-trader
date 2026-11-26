@@ -63,9 +63,8 @@ def _get_current_run_locked(conn):
     """).fetchone()
 
     if last_reset:
-        reset_id = last_reset["id"]
         condition = "AND id > ?"
-        params = (reset_id,)
+        params = (last_reset["id"],)
     else:
         condition = ""
         params = ()
@@ -93,11 +92,6 @@ def _get_eligible_profit(conn):
 
 
 def _lock_eligible_profits(conn):
-    """
-    Protege automáticamente bloques de USD 20
-    de ganancias netas realizadas.
-    """
-
     eligible = _get_eligible_profit(conn)
 
     amount_to_lock = (
@@ -149,34 +143,33 @@ def _lock_eligible_profits(conn):
 def get_protected_funds_summary():
     conn = get_conn()
 
-    locked = conn.execute("""
-        SELECT COALESCE(SUM(amount), 0)
-        FROM protected_funds
-        WHERE event_type = 'LOCK'
-    """).fetchone()[0]
+    try:
+        init_protected_funds_db(conn)
 
-    released = conn.execute("""
-        SELECT COALESCE(SUM(amount), 0)
-        FROM protected_funds
-        WHERE event_type = 'RELEASE'
-    """).fetchone()[0]
+        locked = conn.execute("""
+            SELECT COALESCE(SUM(amount), 0)
+            FROM protected_funds
+            WHERE event_type = 'LOCK'
+        """).fetchone()[0]
 
-    conn.close()
+        released = conn.execute("""
+            SELECT COALESCE(SUM(amount), 0)
+            FROM protected_funds
+            WHERE event_type = 'RELEASE'
+        """).fetchone()[0]
 
-    return {
-        "locked": round(locked - released, 2),
-        "total_protected": round(locked, 2),
-        "total_released": round(released, 2),
-        "threshold": PROFIT_LOCK_THRESHOLD
-    }
+        return {
+            "locked": round(locked - released, 2),
+            "total_protected": round(locked, 2),
+            "total_released": round(released, 2),
+            "threshold": PROFIT_LOCK_THRESHOLD
+        }
+
+    finally:
+        conn.close()
 
 
 def release_protected_funds(amount, user_authorized=False):
-    """
-    Libera fondos únicamente si existe
-    autorización explícita del usuario.
-    """
-
     if user_authorized is not True:
         return False
 
@@ -190,63 +183,71 @@ def release_protected_funds(amount, user_authorized=False):
 
     conn = get_conn()
 
-    balance = _get_protected_balance(conn)
+    try:
+        balance = _get_protected_balance(conn)
 
-    if amount > balance:
-        conn.close()
-        return False
+        if amount > balance:
+            return False
 
-    account = conn.execute("""
-        SELECT capital
-        FROM account
-        WHERE id = 1
-    """).fetchone()
+        account = conn.execute("""
+            SELECT capital
+            FROM account
+            WHERE id = 1
+        """).fetchone()
 
-    if not account:
-        conn.close()
-        return False
+        if not account:
+            return False
 
-    new_capital = round(account["capital"] + amount, 2)
+        new_capital = round(account["capital"] + amount, 2)
 
-    conn.execute("""
-        UPDATE account
-        SET capital = ?
-        WHERE id = 1
-    """, (new_capital,))
+        conn.execute("""
+            UPDATE account
+            SET capital = ?
+            WHERE id = 1
+        """, (new_capital,))
 
-    conn.execute("""
-        INSERT INTO protected_funds (
-            event_type,
+        conn.execute("""
+            INSERT INTO protected_funds (
+                event_type,
+                amount,
+                description,
+                created_at
+            )
+            VALUES (?, ?, ?, ?)
+        """, (
+            "RELEASE",
             amount,
-            description,
-            created_at
-        )
-        VALUES (?, ?, ?, ?)
-    """, (
-        "RELEASE",
-        amount,
-        "Liberación autorizada por el usuario",
-        datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    ))
+            "Liberación autorizada por el usuario",
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        ))
 
-    conn.commit()
-    conn.close()
+        conn.commit()
+        return True
 
-    return True
+    except Exception:
+        conn.rollback()
+        raise
+
+    finally:
+        conn.close()
 
 
 def get_protected_funds_history():
     conn = get_conn()
 
-    rows = conn.execute("""
-        SELECT *
-        FROM protected_funds
-        ORDER BY id DESC
-    """).fetchall()
+    try:
+        init_protected_funds_db(conn)
 
-    conn.close()
+        rows = conn.execute("""
+            SELECT *
+            FROM protected_funds
+            ORDER BY id DESC
+        """).fetchall()
 
-    return [dict(row) for row in rows]
+        return [dict(row) for row in rows]
+
+    finally:
+        conn.close()
 
 
 # ==========================================
@@ -355,113 +356,118 @@ def _sync_snapshots(
 def init_db():
 
     conn = get_conn()
-    cur = conn.cursor()
 
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS account (
-            id INTEGER PRIMARY KEY,
-            capital REAL,
-            emergency_stop INTEGER,
-            auto_pilot INTEGER
-        )
-    """)
-
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS trades (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            ticker TEXT,
-            side TEXT,
-            entry_price REAL,
-            exit_price REAL,
-            amount REAL,
-            pnl REAL,
-            status TEXT,
-            reason TEXT,
-            opened_at TEXT,
-            closed_at TEXT
-        )
-    """)
-
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS snapshots (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            period_type TEXT,
-            period_key TEXT,
-            starting_equity REAL,
-            ending_equity REAL,
-            realized_pnl REAL,
-            updated_at TEXT,
-            UNIQUE(period_type, period_key)
-        )
-    """)
-
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS trade_archive (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            run_id TEXT,
-            ticker TEXT,
-            side TEXT,
-            entry_price REAL,
-            exit_price REAL,
-            amount REAL,
-            pnl REAL,
-            status TEXT,
-            reason TEXT,
-            opened_at TEXT,
-            closed_at TEXT,
-            archived_at TEXT
-        )
-    """)
-
-    init_protected_funds_db(conn)
-
-    # ==========================================
-    # HISTORIAL DE PATRIMONIO
-    # ==========================================
-
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS equity_history (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            timestamp TEXT NOT NULL,
-            capital REAL NOT NULL,
-            invested REAL NOT NULL,
-            floating_pnl REAL NOT NULL,
-            protected REAL NOT NULL,
-            equity REAL NOT NULL,
-            usd_ars_rate REAL,
-            equity_ars REAL
-        )
-    """)
-
-    cur.execute("SELECT COUNT(*) FROM account")
-
-    if cur.fetchone()[0] == 0:
+    try:
+        cur = conn.cursor()
 
         cur.execute("""
-            INSERT INTO account (
-                id,
-                capital,
-                emergency_stop,
-                auto_pilot
+            CREATE TABLE IF NOT EXISTS account (
+                id INTEGER PRIMARY KEY,
+                capital REAL,
+                emergency_stop INTEGER,
+                auto_pilot INTEGER
             )
-            VALUES (1, ?, 0, 0)
-        """, (INITIAL_CAPITAL,))
+        """)
 
-        _sync_snapshots(conn, INITIAL_CAPITAL, 0.0)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS trades (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ticker TEXT,
+                side TEXT,
+                entry_price REAL,
+                exit_price REAL,
+                amount REAL,
+                pnl REAL,
+                status TEXT,
+                reason TEXT,
+                opened_at TEXT,
+                closed_at TEXT
+            )
+        """)
 
-    else:
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS snapshots (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                period_type TEXT,
+                period_key TEXT,
+                starting_equity REAL,
+                ending_equity REAL,
+                realized_pnl REAL,
+                updated_at TEXT,
+                UNIQUE(period_type, period_key)
+            )
+        """)
 
-        acc = conn.execute("""
-            SELECT capital
-            FROM account
-            WHERE id = 1
-        """).fetchone()
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS trade_archive (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id TEXT,
+                ticker TEXT,
+                side TEXT,
+                entry_price REAL,
+                exit_price REAL,
+                amount REAL,
+                pnl REAL,
+                status TEXT,
+                reason TEXT,
+                opened_at TEXT,
+                closed_at TEXT,
+                archived_at TEXT
+            )
+        """)
 
-        if acc is not None:
-            _sync_snapshots(conn, acc["capital"], 0.0)
+        init_protected_funds_db(conn)
 
-    conn.commit()
-    conn.close()
+        # HISTORIAL DE PATRIMONIO
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS equity_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT NOT NULL,
+                capital REAL NOT NULL,
+                invested REAL NOT NULL,
+                floating_pnl REAL NOT NULL,
+                protected REAL NOT NULL,
+                equity REAL NOT NULL,
+                usd_ars_rate REAL,
+                equity_ars REAL
+            )
+        """)
+
+        cur.execute("SELECT COUNT(*) FROM account")
+
+        if cur.fetchone()[0] == 0:
+
+            cur.execute("""
+                INSERT INTO account (
+                    id,
+                    capital,
+                    emergency_stop,
+                    auto_pilot
+                )
+                VALUES (1, ?, 0, 0)
+            """, (INITIAL_CAPITAL,))
+
+            _sync_snapshots(conn, INITIAL_CAPITAL, 0.0)
+
+        else:
+
+            acc = conn.execute("""
+                SELECT capital
+                FROM account
+                WHERE id = 1
+            """).fetchone()
+
+            if acc is not None:
+                _sync_snapshots(conn, acc["capital"], 0.0)
+
+        conn.commit()
+
+    except Exception:
+        conn.rollback()
+        raise
+
+    finally:
+        conn.close()
 
 
 # ==========================================
@@ -472,50 +478,58 @@ def get_account():
 
     conn = get_conn()
 
-    row = conn.execute("""
-        SELECT *
-        FROM account
-        WHERE id = 1
-    """).fetchone()
+    try:
+        row = conn.execute("""
+            SELECT *
+            FROM account
+            WHERE id = 1
+        """).fetchone()
 
-    conn.close()
+        return dict(row) if row else None
 
-    return dict(row) if row else None
+    finally:
+        conn.close()
 
 
 def set_emergency_stop(active):
 
     conn = get_conn()
 
-    conn.execute("""
-        UPDATE account
-        SET emergency_stop = ?,
-            auto_pilot = CASE
-                WHEN ? = 1 THEN 0
-                ELSE auto_pilot
-            END
-        WHERE id = 1
-    """, (
-        1 if active else 0,
-        1 if active else 0
-    ))
+    try:
+        conn.execute("""
+            UPDATE account
+            SET emergency_stop = ?,
+                auto_pilot = CASE
+                    WHEN ? = 1 THEN 0
+                    ELSE auto_pilot
+                END
+            WHERE id = 1
+        """, (
+            1 if active else 0,
+            1 if active else 0
+        ))
 
-    conn.commit()
-    conn.close()
+        conn.commit()
+
+    finally:
+        conn.close()
 
 
 def set_auto_pilot(active):
 
     conn = get_conn()
 
-    conn.execute("""
-        UPDATE account
-        SET auto_pilot = ?
-        WHERE id = 1
-    """, (1 if active else 0,))
+    try:
+        conn.execute("""
+            UPDATE account
+            SET auto_pilot = ?
+            WHERE id = 1
+        """, (1 if active else 0,))
 
-    conn.commit()
-    conn.close()
+        conn.commit()
+
+    finally:
+        conn.close()
 
 
 # ==========================================
@@ -526,75 +540,81 @@ def reset_account(archive_history=True):
 
     conn = get_conn()
 
-    # No permitir borrar una cuenta con fondos protegidos.
-    if _get_protected_balance(conn) > 0:
-        conn.close()
-        return False
+    try:
+        if _get_protected_balance(conn) > 0:
+            return False
 
-    if archive_history:
+        if archive_history:
 
-        run_id = datetime.now().strftime(
-            "RUN-%Y%m%d-%H%M%S"
-        )
+            run_id = datetime.now().strftime(
+                "RUN-%Y%m%d-%H%M%S"
+            )
 
-        archived_at = datetime.now().strftime(
-            "%Y-%m-%d %H:%M:%S"
-        )
+            archived_at = datetime.now().strftime(
+                "%Y-%m-%d %H:%M:%S"
+            )
+
+            conn.execute("""
+                INSERT INTO trade_archive (
+                    run_id,
+                    ticker,
+                    side,
+                    entry_price,
+                    exit_price,
+                    amount,
+                    pnl,
+                    status,
+                    reason,
+                    opened_at,
+                    closed_at,
+                    archived_at
+                )
+                SELECT
+                    ?, ticker, side, entry_price,
+                    exit_price, amount, pnl, status,
+                    reason, opened_at, closed_at, ?
+                FROM trades
+            """, (run_id, archived_at))
 
         conn.execute("""
-            INSERT INTO trade_archive (
-                run_id,
-                ticker,
-                side,
-                entry_price,
-                exit_price,
+            UPDATE account
+            SET capital = ?,
+                emergency_stop = 0,
+                auto_pilot = 0
+            WHERE id = 1
+        """, (INITIAL_CAPITAL,))
+
+        conn.execute("DELETE FROM trades")
+        conn.execute("DELETE FROM snapshots")
+
+        conn.execute("""
+            INSERT INTO protected_funds (
+                event_type,
                 amount,
-                pnl,
-                status,
-                reason,
-                opened_at,
-                closed_at,
-                archived_at
+                description,
+                created_at
             )
-            SELECT
-                ?, ticker, side, entry_price,
-                exit_price, amount, pnl, status,
-                reason, opened_at, closed_at, ?
-            FROM trades
-        """, (run_id, archived_at))
+            VALUES (?, ?, ?, ?)
+        """, (
+            "RESET",
+            0,
+            "Inicio de una nueva simulación",
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        ))
 
-    conn.execute("""
-        UPDATE account
-        SET capital = ?,
-            emergency_stop = 0,
-            auto_pilot = 0
-        WHERE id = 1
-    """, (INITIAL_CAPITAL,))
+        conn.execute("DELETE FROM equity_history")
 
-    conn.execute("DELETE FROM trades")
-    conn.execute("DELETE FROM snapshots")
+        _sync_snapshots(conn, INITIAL_CAPITAL, 0.0)
 
-    conn.execute("""
-        INSERT INTO protected_funds (
-            event_type,
-            amount,
-            description,
-            created_at
-        )
-        VALUES (?, ?, ?, ?)
-    """, (
-        "RESET",
-        0,
-        "Inicio de una nueva simulación",
-        datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    ))
+        conn.commit()
+        return True
 
-    _sync_snapshots(conn, INITIAL_CAPITAL, 0.0)
+    except Exception:
+        conn.rollback()
+        raise
 
-    conn.commit()
-    conn.close()
-
-    return True
+    finally:
+        conn.close()
 
 
 # ==========================================
@@ -610,86 +630,85 @@ def open_trade_db(
 
     conn = get_conn()
 
-    # Intentar proteger ganancias antes de operar.
-    _lock_eligible_profits(conn)
+    try:
+        _lock_eligible_profits(conn)
 
-    # Si hay ganancias que deberían protegerse pero
-    # no se pudieron separar, bloquear nuevas operaciones.
-    if _get_eligible_profit(conn) >= PROFIT_LOCK_THRESHOLD:
+        if _get_eligible_profit(conn) >= PROFIT_LOCK_THRESHOLD:
+            conn.commit()
+            return False
 
-        conn.commit()
-        conn.close()
-        return False
+        acc = conn.execute("""
+            SELECT *
+            FROM account
+            WHERE id = 1
+        """).fetchone()
 
-    acc = conn.execute("""
-        SELECT *
-        FROM account
-        WHERE id = 1
-    """).fetchone()
+        if (
+            not acc
+            or acc["emergency_stop"]
+            or amount <= 0
+            or acc["capital"] < amount
+            or price <= 0
+        ):
+            return False
 
-    if (
-        not acc
-        or acc["emergency_stop"]
-        or amount <= 0
-        or acc["capital"] < amount
-    ):
-        conn.close()
-        return False
+        open_count = conn.execute("""
+            SELECT COUNT(*)
+            FROM trades
+            WHERE status = 'ABIERTA'
+        """).fetchone()[0]
 
-    open_count = conn.execute("""
-        SELECT COUNT(*)
-        FROM trades
-        WHERE status = 'ABIERTA'
-    """).fetchone()[0]
+        if open_count >= MAX_OPEN_TRADES:
+            return False
 
-    if open_count >= MAX_OPEN_TRADES:
-        conn.close()
-        return False
+        exists = conn.execute("""
+            SELECT COUNT(*)
+            FROM trades
+            WHERE ticker = ?
+            AND status = 'ABIERTA'
+        """, (ticker,)).fetchone()[0]
 
-    exists = conn.execute("""
-        SELECT COUNT(*)
-        FROM trades
-        WHERE ticker = ?
-        AND status = 'ABIERTA'
-    """, (ticker,)).fetchone()[0]
+        if exists > 0:
+            return False
 
-    if exists > 0:
-        conn.close()
-        return False
+        new_cap = round(acc["capital"] - amount, 2)
 
-    new_cap = round(acc["capital"] - amount, 2)
+        conn.execute("""
+            UPDATE account
+            SET capital = ?
+            WHERE id = 1
+        """, (new_cap,))
 
-    conn.execute("""
-        UPDATE account
-        SET capital = ?
-        WHERE id = 1
-    """, (new_cap,))
-
-    conn.execute("""
-        INSERT INTO trades (
+        conn.execute("""
+            INSERT INTO trades (
+                ticker,
+                side,
+                entry_price,
+                amount,
+                pnl,
+                status,
+                opened_at
+            )
+            VALUES (?, ?, ?, ?, 0.0, 'ABIERTA', ?)
+        """, (
             ticker,
             side,
-            entry_price,
+            price,
             amount,
-            pnl,
-            status,
-            opened_at
-        )
-        VALUES (?, ?, ?, ?, 0.0, 'ABIERTA', ?)
-    """, (
-        ticker,
-        side,
-        price,
-        amount,
-        datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    ))
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        ))
 
-    _sync_snapshots(conn, new_cap, 0.0)
+        _sync_snapshots(conn, new_cap, 0.0)
 
-    conn.commit()
-    conn.close()
+        conn.commit()
+        return True
 
-    return True
+    except Exception:
+        conn.rollback()
+        raise
+
+    finally:
+        conn.close()
 
 
 # ==========================================
@@ -704,86 +723,91 @@ def close_trade_db(
 
     conn = get_conn()
 
-    trade = conn.execute("""
-        SELECT *
-        FROM trades
-        WHERE id = ?
-        AND status = 'ABIERTA'
-    """, (trade_id,)).fetchone()
+    try:
+        trade = conn.execute("""
+            SELECT *
+            FROM trades
+            WHERE id = ?
+            AND status = 'ABIERTA'
+        """, (trade_id,)).fetchone()
 
-    if not trade:
+        if not trade:
+            return 0.0
+
+        if trade["entry_price"] <= 0:
+            return 0.0
+
+        if trade["side"] == "COMPRAR":
+
+            pct = (
+                current_price - trade["entry_price"]
+            ) / trade["entry_price"]
+
+        else:
+
+            pct = (
+                trade["entry_price"] - current_price
+            ) / trade["entry_price"]
+
+        pnl = round(trade["amount"] * pct, 2)
+        returned = round(trade["amount"] + pnl, 2)
+
+        acc = conn.execute("""
+            SELECT *
+            FROM account
+            WHERE id = 1
+        """).fetchone()
+
+        if not acc:
+            return 0.0
+
+        new_cap = round(acc["capital"] + returned, 2)
+
+        conn.execute("""
+            UPDATE account
+            SET capital = ?
+            WHERE id = 1
+        """, (new_cap,))
+
+        conn.execute("""
+            UPDATE trades
+            SET exit_price = ?,
+                pnl = ?,
+                status = 'CERRADA',
+                reason = ?,
+                closed_at = ?
+            WHERE id = ?
+        """, (
+            current_price,
+            pnl,
+            reason,
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            trade_id
+        ))
+
+        _lock_eligible_profits(conn)
+
+        final_account = conn.execute("""
+            SELECT capital
+            FROM account
+            WHERE id = 1
+        """).fetchone()
+
+        _sync_snapshots(
+            conn,
+            final_account["capital"],
+            pnl
+        )
+
+        conn.commit()
+        return pnl
+
+    except Exception:
+        conn.rollback()
+        raise
+
+    finally:
         conn.close()
-        return 0.0
-
-    if trade["entry_price"] <= 0:
-        conn.close()
-        return 0.0
-
-    if trade["side"] == "COMPRAR":
-
-        pct = (
-            current_price - trade["entry_price"]
-        ) / trade["entry_price"]
-
-    else:
-
-        pct = (
-            trade["entry_price"] - current_price
-        ) / trade["entry_price"]
-
-    pnl = round(trade["amount"] * pct, 2)
-
-    returned = round(trade["amount"] + pnl, 2)
-
-    acc = conn.execute("""
-        SELECT *
-        FROM account
-        WHERE id = 1
-    """).fetchone()
-
-    if not acc:
-        conn.close()
-        return 0.0
-
-    new_cap = round(acc["capital"] + returned, 2)
-
-    conn.execute("""
-        UPDATE account
-        SET capital = ?
-        WHERE id = 1
-    """, (new_cap,))
-
-    conn.execute("""
-        UPDATE trades
-        SET exit_price = ?,
-            pnl = ?,
-            status = 'CERRADA',
-            reason = ?,
-            closed_at = ?
-        WHERE id = ?
-    """, (
-        current_price,
-        pnl,
-        reason,
-        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        trade_id
-    ))
-
-    # Proteger ganancias netas acumuladas.
-    _lock_eligible_profits(conn)
-
-    final_account = conn.execute("""
-        SELECT capital
-        FROM account
-        WHERE id = 1
-    """).fetchone()
-
-    _sync_snapshots(conn, final_account["capital"], pnl)
-
-    conn.commit()
-    conn.close()
-
-    return pnl
 
 
 # ==========================================
@@ -794,32 +818,36 @@ def get_open_trades():
 
     conn = get_conn()
 
-    rows = conn.execute("""
-        SELECT *
-        FROM trades
-        WHERE status = 'ABIERTA'
-        ORDER BY id DESC
-    """).fetchall()
+    try:
+        rows = conn.execute("""
+            SELECT *
+            FROM trades
+            WHERE status = 'ABIERTA'
+            ORDER BY id DESC
+        """).fetchall()
 
-    conn.close()
+        return [dict(row) for row in rows]
 
-    return [dict(row) for row in rows]
+    finally:
+        conn.close()
 
 
 def get_closed_trades():
 
     conn = get_conn()
 
-    rows = conn.execute("""
-        SELECT *
-        FROM trades
-        WHERE status = 'CERRADA'
-        ORDER BY id DESC
-    """).fetchall()
+    try:
+        rows = conn.execute("""
+            SELECT *
+            FROM trades
+            WHERE status = 'CERRADA'
+            ORDER BY id DESC
+        """).fetchall()
 
-    conn.close()
+        return [dict(row) for row in rows]
 
-    return [dict(row) for row in rows]
+    finally:
+        conn.close()
 
 
 # ==========================================
@@ -831,26 +859,25 @@ def get_period_summary(period_type):
     now = datetime.now()
 
     if period_type == "daily":
-
         period_key = now.strftime("%Y-%m-%d")
-
     else:
-
         monday = now - timedelta(days=now.weekday())
         period_key = monday.strftime("%Y-W%W")
 
     conn = get_conn()
 
-    row = conn.execute("""
-        SELECT *
-        FROM snapshots
-        WHERE period_type = ?
-        AND period_key = ?
-    """, (period_type, period_key)).fetchone()
+    try:
+        row = conn.execute("""
+            SELECT *
+            FROM snapshots
+            WHERE period_type = ?
+            AND period_key = ?
+        """, (period_type, period_key)).fetchone()
 
-    conn.close()
+        return dict(row) if row else None
 
-    return dict(row) if row else None
+    finally:
+        conn.close()
 
 
 # ==========================================
@@ -861,62 +888,12 @@ def get_archived_trades():
 
     conn = get_conn()
 
-    rows = conn.execute("""
-        SELECT *
-        FROM trade_archive
-        ORDER BY id DESC
-    """).fetchall()
-
-    conn.close()
-
-    return [dict(row) for row in rows]
-
-
-# ==========================================
-# PROTEGER GANANCIAS DISPONIBLES
-# ==========================================
-
-def protect_eligible_profits():
-    """
-    Comprueba y protege ganancias realizadas
-    cuando se alcanza el umbral configurado.
-    """
-
-    conn = get_conn()
-
     try:
-        amount = _lock_eligible_profits(conn)
-
-        if amount > 0:
-            account = conn.execute("""
-                SELECT capital
-                FROM account
-                WHERE id = 1
-            """).fetchone()
-
-            if account:
-                _sync_snapshots(
-                    conn,
-                    account["capital"],
-                    0.0
-                )
-
-        conn.commit()
-        return amount
-
-    except Exception:
-        conn.rollback()
-        raise
-
-    finally:
-        conn.close()
-
-
-# ==========================================
-# HISTORIAL DE PATRIMONIO
-# ==========================================
-
-def record_equity_point(
+        rows = conn.execute("""
+            SELECT *
+            FROM trade_archive
+            ORDER BY id DESC
+    def record_equity_point(
     capital,
     invested,
     floating_pnl,
@@ -933,14 +910,10 @@ def record_equity_point(
             FROM equity_history
             ORDER BY id DESC
             LIMIT 1
-            
         """).fetchone()
 
-        # Registrar como máximo un punto cada 60 segundos.
+        # Guardar como máximo un registro cada 60 segundos.
         if last:
-            last_time = datetime.strptime(
-                last["timesta
-            
             last_time = datetime.strptime(
                 last["timestamp"],
                 "%Y-%m-%d %H:%M:%S"
@@ -949,13 +922,18 @@ def record_equity_point(
             if (now - last_time).total_seconds() < 60:
                 return False
 
+        # Calcular patrimonio total.
         equity = round(
             capital + invested + floating_pnl + protected,
             2
         )
 
+        # Conversión estimada a pesos argentinos.
         if usd_ars_rate and usd_ars_rate > 0:
-            equity_ars = round(equity * usd_ars_rate, 2)
+            equity_ars = round(
+                equity * usd_ars_rate,
+                2
+            )
         else:
             equity_ars = None
 
@@ -994,6 +972,96 @@ def record_equity_point(
 
 
 def get_equity_history(limit=1000):
+
+    conn = get_conn()
+
+    try:
+        rows = conn.execute("""
+            SELECT *
+            FROM equity_history
+            ORDER BY id DESC
+            LIMIT ?
+        """, (limit,)).fetchall()
+def record_equity_point(
+    capital,
+    invested,
+    floating_pnl,
+    protected,
+    usd_ars_rate=None
+):
+    conn = get_conn()
+
+    try:
+        now = datetime.now()
+
+        last = conn.execute("""
+            SELECT timestamp
+            FROM equity_history
+            ORDER BY id DESC
+            LIMIT 1
+        """).fetchone()
+
+        # Guardar como máximo un registro cada 60 segundos.
+        if last:
+            last_time = datetime.strptime(
+                last["timestamp"],
+                "%Y-%m-%d %H:%M:%S"
+            )
+
+            if (now - last_time).total_seconds() < 60:
+                return False
+
+        # Calcular patrimonio total.
+        equity = round(
+            capital + invested + floating_pnl + protected,
+            2
+        )
+
+        # Conversión estimada a pesos argentinos.
+        if usd_ars_rate and usd_ars_rate > 0:
+            equity_ars = round(
+                equity * usd_ars_rate,
+                2
+            )
+        else:
+            equity_ars = None
+
+        conn.execute("""
+            INSERT INTO equity_history (
+                timestamp,
+                capital,
+                invested,
+                floating_pnl,
+                protected,
+                equity,
+                usd_ars_rate,
+                equity_ars
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            now.strftime("%Y-%m-%d %H:%M:%S"),
+            round(capital, 2),
+            round(invested, 2),
+            round(floating_pnl, 2),
+            round(protected, 2),
+            equity,
+            usd_ars_rate,
+            equity_ars
+        ))
+
+        conn.commit()
+        return True
+
+    except Exception:
+        conn.rollback()
+        raise
+
+    finally:
+        conn.close()
+
+
+def get_equity_history(limit=1000):
+
     conn = get_conn()
 
     try:
@@ -1004,7 +1072,18 @@ def get_equity_history(limit=1000):
             LIMIT ?
         """, (limit,)).fetchall()
 
-        return [dict(row) for row in reversed(rows)]
+        return [
+            dict(row)
+            for row in reversed(rows)
+        ]
 
     finally:
         conn.close()
+        return [
+            dict(row)
+            for row in reversed(rows)
+        ]
+
+    finally:
+        conn.close()
+        
