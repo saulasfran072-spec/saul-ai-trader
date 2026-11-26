@@ -1,13 +1,10 @@
 import streamlit as st
 
-from config import INITIAL_CAPITAL
-from trading.database import init_db, get_account, get_open_trades
-from trading.simulator import (
-    calculate_risk_budget,
-    calculate_position_size,
-    evaluate_open_trades,
-    check_loss_limits,
-    run_autopilot_cycle,
+from trading.database import (
+    init_db,
+    get_account,
+    get_open_trades,
+    set_auto_pilot
 )
 
 st.set_page_config(
@@ -16,28 +13,49 @@ st.set_page_config(
 )
 
 st.title("📈 SAUL AI TRADER V2")
-st.subheader("Prueba 6: Conexión completa")
+st.subheader("Revisión de operaciones abiertas")
 
 try:
     init_db()
 
+    # Desactivar el piloto automático temporalmente.
+    set_auto_pilot(False)
+
     account = get_account()
+    trades = get_open_trades()
 
-    risk = calculate_risk_budget(INITIAL_CAPITAL)
-    position = calculate_position_size(INITIAL_CAPITAL)
+    st.success("Piloto automático desactivado.")
 
-    st.success("¡Conexión con el simulador exitosa!")
+    st.metric(
+        "Capital disponible",
+        f"${account['capital']:,.2f}"
+    )
 
-    st.metric("Capital inicial", f"${INITIAL_CAPITAL:,.2f}")
-    st.metric("Capital disponible", f"${account['capital']:,.2f}")
-    st.metric("Riesgo por operación", f"${risk:,.2f}")
-    st.metric("Tamaño de posición", f"${position:,.2f}")
+    st.metric(
+        "Operaciones abiertas",
+        len(trades)
+    )
 
-    st.write("Operaciones abiertas:", len(get_open_trades()))
+    if trades:
+        st.write("### Detalle de operaciones")
 
-    st.write("Estado del piloto automático:",
-             "Activado" if account["auto_pilot"] else "Desactivado")
+        for trade in trades:
+            with st.expander(
+                f"{trade['ticker']} - {trade['side']}"
+            ):
+                st.write("ID:", trade["id"])
+                st.write("Activo:", trade["ticker"])
+                st.write("Tipo:", trade["side"])
+                st.write("Precio de entrada:", trade["entry_price"])
+                st.write("Capital invertido:", f"${trade['amount']:,.2f}")
+                st.write("Fecha de apertura:", trade["opened_at"])
+    else:
+        st.info("No hay operaciones abiertas.")
+
+    st.warning(
+        "Modo de revisión: no se abrirán ni cerrarán operaciones."
+    )
 
 except Exception as e:
-    st.error("Error en la conexión")
+    st.error("Error al revisar las operaciones.")
     st.exception(e)
