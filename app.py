@@ -1,31 +1,36 @@
 import streamlit as st
-import inspect
 
-from config import INITIAL_CAPITAL
-from trading.simulator import (
-    calculate_risk_budget,
-    calculate_position_size,
-    evaluate_open_trades,
-)
+from trading.analyzer import get_live_price, analyze_asset
 
 st.set_page_config(page_title="SAUL AI TRADER V2")
 
 st.title("📈 SAUL AI TRADER V2")
-st.subheader("Prueba 4: Simulador de operaciones")
+st.subheader("Prueba 5: Análisis de mercado")
 
-try:
-    risk = calculate_risk_budget(INITIAL_CAPITAL)
-    position = calculate_position_size(INITIAL_CAPITAL)
+ticker = st.selectbox(
+    "Seleccionar activo",
+    ["BTC-USD", "ETH-USD", "SOL-USD", "AAPL", "NVDA"]
+)
 
-    st.success("¡Simulador conectado correctamente!")
+if st.button("Analizar mercado"):
+    with st.spinner("Consultando mercado..."):
 
-    st.metric("Capital de referencia", f"${INITIAL_CAPITAL:,.2f}")
-    st.metric("Riesgo por operación", f"${risk:,.2f}")
-    st.metric("Tamaño de posición", f"${position:,.2f}")
+        price = get_live_price(ticker)
+        analysis = analyze_asset(ticker)
 
-    st.write("Función de evaluación:")
-    st.code(str(inspect.signature(evaluate_open_trades)))
+        if price is not None:
+            st.metric("Precio actual", f"${price:,.2f}")
+        else:
+            st.warning("No se pudo obtener el precio.")
 
-except Exception as e:
-    st.error("Error al conectar el simulador")
-    st.exception(e)
+        if analysis:
+            st.success("¡Análisis completado!")
+
+            st.write("Señal:", analysis["signal"])
+            st.write("RSI:", analysis["rsi"])
+            st.write("SMA 7:", analysis["sma_7"])
+            st.write("SMA 20:", analysis["sma_20"])
+
+            st.json(analysis)
+        else:
+            st.error("No se pudo completar el análisis.")
