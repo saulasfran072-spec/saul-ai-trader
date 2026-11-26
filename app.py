@@ -1,10 +1,14 @@
 import streamlit as st
 import pandas as pd
+import requests
+
+from streamlit_autorefresh import st_autorefresh
 
 from config import (
     INITIAL_CAPITAL,
     MAX_DAILY_LOSS,
-    MAX_WEEKLY_LOSS
+    MAX_WEEKLY_LOSS,
+    MARKETS
 )
 
 from trading.database import (
@@ -20,48 +24,148 @@ from trading.database import (
 from trading.analyzer import get_live_price
 
 
+# ==========================================
+# CONFIGURACIÓN GENERAL
+# ==========================================
+
 st.set_page_config(
     page_title="SAUL AI TRADER V2",
     page_icon="📈",
     layout="wide"
 )
 
+# Actualización automática cada 60 segundos
+refresh_count = st_autorefresh(
+    interval=60000,
+    key="saul_refresh"
+)
+
 init_db()
 
-st.title("📈 SAUL AI TRADER V2")
-st.caption("Panel de control y supervisión")
 
-# =====================================
-# DATOS DE LA CUENTA
-# =====================================
+# ==========================================
+# FUNCIONES DE DATOS
+# ==========================================
+
+@st.cache_data(ttl=45)
+def get_market_price(ticker):
+    try:
+        return get_live_price(ticker)
+    except Exception:
+        return None
+
+
+@st.cache_data(ttl=60)
+def get_dollar_rates():
+
+    endpoints = {
+        "Oficial": "https://monedapi.ar/api/v2/usd/oficial",
+        "MEP": "https://monedapi.ar/api/v2/usd/bolsa",
+        "Blue": "https://monedapi.ar/api/v2/usd/blue"
+    }
+
+    rates = {}
+
+    for name, url in endpoints.items():
+
+        try:
+            response = requests.get(
+                url,
+                timeout=8
+            )
+
+            response.raise_for_status()
+
+            data = response.json()
+
+            buy = float(data["buy"])
+            sell = float(data["sell"])
+
+            if buy <= 0 or sell <= 0:
+                continue
+
+            rates[name] = {
+                "compra": buy,
+                "venta": sell,
+                "actualizacion": data.get(
+                    "lastScrapedAt",
+                    data.get("updatedAt", "Sin información")
+                )
+            }
+
+        except Exception:
+            continue
+
+    return rates
+
+
+def money_usd(value):
+    return f"USD ${value:,.2f}"
+
+
+def money_ars(value):
+    return f"ARS ${value:,.2f}"
+
+
+# ==========================================
+# ENCABEZADO
+# ==========================================
+
+st.title("📈 SAUL AI TRADER V2")
+
+st.caption(
+    "Sistema de supervisión y análisis de mercados"
+)
+
+st.caption(
+    f"Actualización automática N.º {refresh_count} | "
+    "Intervalo: 60 segundos"
+)
+
+st.divider()
+
+
+# ==========================================
+# CUENTA
+# ==========================================
 
 account = get_account()
+
 trades = get_open_trades()
+
 closed = get_closed_trades()
 
-floating_gain = 0.0
-floating_loss = 0.0
-floating_pnl = 0.0
+capital = float(account["capital"])
+
 invested = 0.0
+
+floating_gain = 0.0
+
+floating_loss = 0.0
 
 details = []
 
-# =====================================
-# EVALUAR OPERACIONES ABIERTAS
-# =====================================
+
+# ==========================================
+# EVALUAR OPERACIONES
+# ==========================================
 
 for trade in trades:
 
-    invested += trade["amount"]
+    amount = float(trade["amount"])
 
-    price = get_live_price(trade["ticker"])
+    entry = float(trade["entry_price"])
 
-    if price is None or trade["entry_price"] <= 0:
+    invested += amount
+
+    price = get_market_price(trade["ticker"])
+
+    if price is None or entry <= 0:
 
         details.append({
             "Activo": trade["ticker"],
             "Tipo": trade["side"],
-            "Entrada": trade["entry_price"],
+            "Entrada": entry,
             "Actual": "Sin datos",
             "Resultado": "Sin datos"
         })
@@ -70,17 +174,13 @@ for trade in trades:
 
     if trade["side"] == "COMPRAR":
 
-        change = (
-            price - trade["entry_price"]
-        ) / trade["entry_price"]
+        change = (price - entry) / entry
 
     else:
 
-        change = (
-            trade["entry_price"] - price
-        ) / trade["entry_price"]
+        change = (entry - price) / entry
 
-    pnl = trade["amount"] * change
+    pnl = amount * change
 
     if pnl > 0:
         floating_gain += pnl
@@ -91,53 +191,202 @@ for trade in trades:
     details.append({
         "Activo": trade["ticker"],
         "Tipo": trade["side"],
-        "Entrada": trade["entry_price"],
+        "Entrada": entry,
         "Actual": price,
         "Resultado": round(pnl, 2)
     })
 
-floating_pnl = floating_gain - floating_loss
 
-capital = account["capital"]
+floating_pnl = floating_gain - floating_loss
 
 equity = capital + invested + floating_pnl
 
-# =====================================
+
+# ==========================================
+# COTIZACIONES DEL DÓLAR
+# ==========================================
+
+rates = get_dollar_rates()
+
+
+# ==========================================
 # RESUMEN DE CUENTA
-# =====================================
+# ==========================================
 
 st.subheader("💰 Resumen de cuenta")
 
-st.metric(
-    "💵 Capital disponible",
-    f"${capital:,.2f}"
-)
+c1, c2, c3 = st.columns(3)
 
-st.metric(
-    "🏦 Patrimonio estimado",
-    f"${equity:,.2f}"
-)
+with c1:
 
-st.metric(
-    "🟢 Ganancia flotante",
-    f"+${floating_gain:,.2f}"
-)
+    st.metric(
+        "Capital disponible",
+        money_usd(capital)
+    )
 
-st.metric(
-    "🔴 Pérdida flotante",
-    f"-${floating_loss:,.2f}"
-)
+with c2:
 
-st.metric(
-    "📊 Operaciones abiertas",
-    len(trades)
-)
+    st.metric(
+        "Patrimonio estimado",
+        money_usd(equity)
+    )
+
+with c3:
+
+    st.metric(
+        "Operaciones abiertas",
+        len(trades)
+    )
+
+
+c4, c5 = st.columns(2)
+
+with c4:
+
+    st.metric(
+        "🟢 Ganancia flotante",
+        money_usd(floating_gain)
+    )
+
+with c5:
+
+    st.metric(
+        "🔴 Pérdida flotante",
+        money_usd(floating_loss)
+    )
+
+
+# ==========================================
+# CONVERSOR USD / ARS
+# ==========================================
 
 st.divider()
 
-# =====================================
+st.subheader("💱 Conversor de divisas")
+
+if "show_currency" not in st.session_state:
+    st.session_state.show_currency = False
+
+
+if st.button("💱 VER CONVERSIONES"):
+
+    st.session_state.show_currency = (
+        not st.session_state.show_currency
+    )
+
+
+if st.session_state.show_currency:
+
+    if rates:
+
+        st.write("### Valor de 1 dólar")
+
+        rows = []
+
+        for name, rate in rates.items():
+
+            rows.append({
+                "Cotización": name,
+                "Compra": money_ars(rate["compra"]),
+                "Venta": money_ars(rate["venta"])
+            })
+
+        st.dataframe(
+            pd.DataFrame(rows),
+            use_container_width=True,
+            hide_index=True
+        )
+
+        st.write("### Tu capital convertido")
+
+        for name, rate in rates.items():
+
+            ars_capital = capital * rate["compra"]
+
+            ars_equity = equity * rate["compra"]
+
+            st.markdown(f"**Dólar {name}**")
+
+            a, b = st.columns(2)
+
+            with a:
+
+                st.metric(
+                    "Capital disponible",
+                    money_ars(ars_capital)
+                )
+
+            with b:
+
+                st.metric(
+                    "Patrimonio estimado",
+                    money_ars(ars_equity)
+                )
+
+            st.caption(
+                "Conversión estimada usando la cotización de compra."
+            )
+
+            st.caption(
+                f"Última confirmación: {rate['actualizacion']}"
+            )
+
+            st.divider()
+
+    else:
+
+        st.warning(
+            "No se pudieron obtener las cotizaciones. "
+            "Se intentará nuevamente en la próxima actualización."
+        )
+
+
+# ==========================================
+# MERCADOS
+# ==========================================
+
+st.divider()
+
+st.subheader("🌎 Mercados")
+
+st.caption(
+    "Últimos precios disponibles. "
+    "Los datos dependen del proveedor y pueden tener demoras."
+)
+
+market_rows = []
+
+for category, tickers in MARKETS.items():
+
+    for ticker in tickers:
+
+        price = get_market_price(ticker)
+
+        market_rows.append({
+            "Categoría": category,
+            "Activo": ticker,
+            "Precio USD": (
+                price if price is not None else "Sin datos"
+            )
+        })
+
+
+if market_rows:
+
+    market_df = pd.DataFrame(market_rows)
+
+    st.dataframe(
+        market_df,
+        use_container_width=True,
+        hide_index=True
+    )
+
+
+# ==========================================
 # ESTADO DEL SISTEMA
-# =====================================
+# ==========================================
+
+st.divider()
 
 st.subheader("⚙️ Estado del sistema")
 
@@ -146,48 +395,72 @@ s1, s2 = st.columns(2)
 with s1:
 
     if account["auto_pilot"]:
-        st.success("Piloto automático ACTIVADO")
+
+        st.success(
+            "🟢 Piloto automático ACTIVADO"
+        )
 
     else:
-        st.warning("Piloto automático DESACTIVADO")
+
+        st.warning(
+            "Piloto automático DESACTIVADO"
+        )
+
 
 with s2:
 
     if account["emergency_stop"]:
-        st.error("PARADA DE EMERGENCIA ACTIVADA")
+
+        st.error(
+            "🚨 PARADA DE EMERGENCIA ACTIVADA"
+        )
 
     else:
-        st.success("Sistema sin parada de emergencia")
+
+        st.success(
+            "Sistema sin parada de emergencia"
+        )
+
 
 b1, b2, b3 = st.columns(3)
 
 with b1:
 
     if st.button("⛔ Desactivar piloto"):
+
         set_auto_pilot(False)
+
         st.rerun()
+
 
 with b2:
 
     if st.button("🚨 PARADA DE EMERGENCIA"):
+
         set_emergency_stop(True)
+
         st.rerun()
+
 
 with b3:
 
     if st.button("🔓 Quitar parada de emergencia"):
+
         set_emergency_stop(False)
+
         st.rerun()
+
 
 st.caption(
     "Quitar la parada de emergencia no activa el piloto automático."
 )
 
-st.divider()
 
-# =====================================
+# ==========================================
 # OPERACIONES ABIERTAS
-# =====================================
+# ==========================================
+
+st.divider()
 
 st.subheader("📊 Operaciones abiertas")
 
@@ -201,13 +474,16 @@ if details:
 
 else:
 
-    st.info("No hay operaciones abiertas.")
+    st.info(
+        "No hay operaciones abiertas."
+    )
+
+
+# ==========================================
+# CONTROL DE RIESGO
+# ==========================================
 
 st.divider()
-
-# =====================================
-# CONTROL DE RIESGO
-# =====================================
 
 st.subheader("🛡️ Control de riesgo")
 
@@ -226,14 +502,14 @@ for period, limit, label in [
 
         max_loss = summary["starting_equity"] * limit
 
-        st.write(f"**Límite {label}:** ${max_loss:,.2f}")
+        st.write(f"**Límite {label}:** {money_usd(max_loss)}")
 
         st.write(
-            f"Resultado realizado: ${realized:,.2f}"
+            f"Resultado realizado: {money_usd(realized)}"
         )
 
         st.write(
-            f"Resultado combinado estimado: ${total:,.2f}"
+            f"Resultado combinado estimado: {money_usd(total)}"
         )
 
     else:
@@ -242,11 +518,12 @@ for period, limit, label in [
             f"No hay datos suficientes para el control {label}."
         )
 
-st.divider()
 
-# =====================================
+# ==========================================
 # HISTORIAL
-# =====================================
+# ==========================================
+
+st.divider()
 
 st.subheader("📚 Historial de operaciones")
 
@@ -260,18 +537,25 @@ if closed:
 
 else:
 
-    st.info("Todavía no hay operaciones cerradas.")
+    st.info(
+        "Todavía no hay operaciones cerradas."
+    )
+
+
+# ==========================================
+# PIE DE PÁGINA
+# ==========================================
 
 st.divider()
 
-# =====================================
-# PIE DE PÁGINA
-# =====================================
-
 st.caption(
-    f"Capital inicial configurado: ${INITIAL_CAPITAL:,.2f}"
+    f"Capital inicial configurado: {money_usd(INITIAL_CAPITAL)}"
 )
 
 st.caption(
-    "SAUL AI TRADER V2 | Panel de supervisión"
-        )
+    "SAUL AI TRADER V2 | Sistema de supervisión"
+)
+
+st.caption(
+    "Los resultados son simulados y no representan ganancias reales."
+            )
