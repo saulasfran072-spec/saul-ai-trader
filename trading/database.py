@@ -933,6 +933,7 @@ def record_equity_point(
             FROM equity_history
             ORDER BY id DESC
             LIMIT 1
+            
         """).fetchone()
 
         # Registrar como máximo un punto cada 60 segundos.
@@ -940,3 +941,70 @@ def record_equity_point(
             last_time = datetime.strptime(
                 last["timesta
             
+            last_time = datetime.strptime(
+                last["timestamp"],
+                "%Y-%m-%d %H:%M:%S"
+            )
+
+            if (now - last_time).total_seconds() < 60:
+                return False
+
+        equity = round(
+            capital + invested + floating_pnl + protected,
+            2
+        )
+
+        if usd_ars_rate and usd_ars_rate > 0:
+            equity_ars = round(equity * usd_ars_rate, 2)
+        else:
+            equity_ars = None
+
+        conn.execute("""
+            INSERT INTO equity_history (
+                timestamp,
+                capital,
+                invested,
+                floating_pnl,
+                protected,
+                equity,
+                usd_ars_rate,
+                equity_ars
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            now.strftime("%Y-%m-%d %H:%M:%S"),
+            round(capital, 2),
+            round(invested, 2),
+            round(floating_pnl, 2),
+            round(protected, 2),
+            equity,
+            usd_ars_rate,
+            equity_ars
+        ))
+
+        conn.commit()
+        return True
+
+    except Exception:
+        conn.rollback()
+        raise
+
+    finally:
+        conn.close()
+
+
+def get_equity_history(limit=1000):
+    conn = get_conn()
+
+    try:
+        rows = conn.execute("""
+            SELECT *
+            FROM equity_history
+            ORDER BY id DESC
+            LIMIT ?
+        """, (limit,)).fetchall()
+
+        return [dict(row) for row in reversed(rows)]
+
+    finally:
+        conn.close()
