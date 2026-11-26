@@ -21,7 +21,8 @@ from trading.database import (
     set_emergency_stop,
     get_protected_funds_summary,
     get_protected_funds_history,
-    release_protected_funds
+    release_protected_funds,
+    protect_eligible_profits
 )
 
 from trading.analyzer import get_live_price
@@ -43,6 +44,9 @@ refresh_count = st_autorefresh(
 )
 
 init_db()
+
+# Comprobar ganancias y proteger bloques de USD 20.
+protect_eligible_profits()
 
 
 # ==========================================
