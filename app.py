@@ -264,7 +264,7 @@ record_equity_point(
 # GRÁFICOS COMPACTOS DE EVOLUCIÓN
 # ==========================================
 
-st.subheader("📈 Evolución del patrimonio")
+st.subheader("📊 Evolución del patrimonio")
 
 history = get_equity_history(limit=1000)
 
@@ -288,27 +288,31 @@ if history:
 
     if not history_df.empty:
 
+        # GRÁFICO USD
+
         st.markdown("#### 💵 Patrimonio en USD")
 
-        usd_min = float(history_df["equity"].min())
-        usd_max = float(history_df["equity"].max())
-        usd_padding = max((usd_max - usd_min) * 0.10, 1)
-
-        usd_chart = .mark_bar(
-    cornerRadiusTopLeft=4,
-    cornerRadiusTopRight=4,
-    size=12
-        )
-                    ],
-                    zero=False
-                )
+        usd_chart = alt.Chart(history_df).mark_bar(
+            size=10,
+            cornerRadiusTopLeft=3,
+            cornerRadiusTopRight=3
+        ).encode(
+            x=alt.X("timestamp:T", title=None),
+            y=alt.Y(
+                "equity:Q",
+                title="Patrimonio USD",
+                scale=alt.Scale(zero=True)
             ),
             tooltip=[
                 alt.Tooltip("timestamp:T", title="Fecha"),
-                alt.Tooltip("equity:Q", title="Patrimonio USD", format=",.2f")
+                alt.Tooltip(
+                    "equity:Q",
+                    title="Patrimonio USD",
+                    format=",.2f"
+                )
             ]
         ).properties(
-            height=150
+            height=180
         )
 
         st.altair_chart(
@@ -322,6 +326,8 @@ if history:
         )
 
         st.divider()
+
+        # GRÁFICO ARS
 
         st.markdown("#### 💱 Patrimonio en ARS")
 
@@ -341,31 +347,27 @@ if history:
                 subset=["equity_ars"]
             )
 
-            ars_min = float(history_ars["equity_ars"].min())
-            ars_max = float(history_ars["equity_ars"].max())
-            ars_padding = max((ars_max - ars_min) * 0.10, 100)
-
-            ars_chart = alt.Chart(history_ars).mark_line(
-                strokeWidth=2
+            ars_chart = alt.Chart(history_ars).mark_bar(
+                size=10,
+                cornerRadiusTopLeft=3,
+                cornerRadiusTopRight=3
             ).encode(
                 x=alt.X("timestamp:T", title=None),
                 y=alt.Y(
                     "equity_ars:Q",
                     title="Patrimonio ARS",
-                    scale=alt.Scale(
-                        domain=[
-                            ars_min - ars_padding,
-                            ars_max + ars_padding
-                        ],
-                        zero=False
-                    )
+                    scale=alt.Scale(zero=True)
                 ),
                 tooltip=[
                     alt.Tooltip("timestamp:T", title="Fecha"),
-                    alt.Tooltip("equity_ars:Q", title="Patrimonio ARS", format=",.2f")
+                    alt.Tooltip(
+                        "equity_ars:Q",
+                        title="Patrimonio ARS",
+                        format=",.2f"
+                    )
                 ]
             ).properties(
-                height=150
+                height=180
             )
 
             st.altair_chart(
@@ -388,8 +390,7 @@ if history:
 
         st.caption(
             "Historial registrado por SAUL AI TRADER. "
-            "La conversión a ARS es estimativa. "
-            "La escala vertical está ajustada para visualizar mejor las variaciones."
+            "La conversión a ARS es estimativa."
         )
 
     else:
@@ -404,6 +405,7 @@ else:
     )
 
 st.divider()
+
 
 
 # ==========================================
