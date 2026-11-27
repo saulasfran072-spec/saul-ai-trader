@@ -902,6 +902,10 @@ st.caption(
 )
 
 st.caption(
+    "SAUL AI TRADER V2 | Sistema de supervisión y análisis"
+)
+
+st.caption(
     "Los resultados de esta versión son simulados "
     "y no representan ganancias reales."
-            )
+)
