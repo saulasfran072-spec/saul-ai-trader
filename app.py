@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import requests
-
+import altair as alt
 from streamlit_autorefresh import st_autorefresh
 
 from config import (
@@ -261,7 +261,7 @@ record_equity_point(
 
 
 # ==========================================
-# GRÁFICOS DE EVOLUCIÓN DEL PATRIMONIO
+# GRÁFICOS COMPACTOS DE EVOLUCIÓN
 # ==========================================
 
 st.subheader("📈 Evolución del patrimonio")
@@ -273,19 +273,52 @@ if history:
     history_df = pd.DataFrame(history)
 
     history_df["timestamp"] = pd.to_datetime(
-        history_df["timestamp"]
+        history_df["timestamp"],
+        errors="coerce"
     )
 
-    history_df = history_df.set_index("timestamp")
+    history_df["equity"] = pd.to_numeric(
+        history_df["equity"],
+        errors="coerce"
+    )
 
-    graph_usd, graph_ars = st.columns(2)
+    history_df = history_df.dropna(
+        subset=["timestamp", "equity"]
+    ).sort_values("timestamp")
 
-    with graph_usd:
+    if not history_df.empty:
 
         st.markdown("#### 💵 Patrimonio en USD")
 
-        st.line_chart(
-            history_df[["equity"]],
+        usd_min = float(history_df["equity"].min())
+        usd_max = float(history_df["equity"].max())
+        usd_padding = max((usd_max - usd_min) * 0.10, 1)
+
+        usd_chart = alt.Chart(history_df).mark_line(
+            strokeWidth=2
+        ).encode(
+            x=alt.X("timestamp:T", title=None),
+            y=alt.Y(
+                "equity:Q",
+                title="Patrimonio USD",
+                scale=alt.Scale(
+                    domain=[
+                        usd_min - usd_padding,
+                        usd_max + usd_padding
+                    ],
+                    zero=False
+                )
+            ),
+            tooltip=[
+                alt.Tooltip("timestamp:T", title="Fecha"),
+                alt.Tooltip("equity:Q", title="Patrimonio USD", format=",.2f")
+            ]
+        ).properties(
+            height=150
+        )
+
+        st.altair_chart(
+            usd_chart,
             use_container_width=True
         )
 
@@ -294,7 +327,7 @@ if history:
             money_usd(equity)
         )
 
-    with graph_ars:
+        st.divider()
 
         st.markdown("#### 💱 Patrimonio en ARS")
 
@@ -303,13 +336,50 @@ if history:
             and history_df["equity_ars"].notna().any()
         ):
 
-            st.line_chart(
-                history_df[["equity_ars"]],
+            history_ars = history_df.copy()
+
+            history_ars["equity_ars"] = pd.to_numeric(
+                history_ars["equity_ars"],
+                errors="coerce"
+            )
+
+            history_ars = history_ars.dropna(
+                subset=["equity_ars"]
+            )
+
+            ars_min = float(history_ars["equity_ars"].min())
+            ars_max = float(history_ars["equity_ars"].max())
+            ars_padding = max((ars_max - ars_min) * 0.10, 100)
+
+            ars_chart = alt.Chart(history_ars).mark_line(
+                strokeWidth=2
+            ).encode(
+                x=alt.X("timestamp:T", title=None),
+                y=alt.Y(
+                    "equity_ars:Q",
+                    title="Patrimonio ARS",
+                    scale=alt.Scale(
+                        domain=[
+                            ars_min - ars_padding,
+                            ars_max + ars_padding
+                        ],
+                        zero=False
+                    )
+                ),
+                tooltip=[
+                    alt.Tooltip("timestamp:T", title="Fecha"),
+                    alt.Tooltip("equity_ars:Q", title="Patrimonio ARS", format=",.2f")
+                ]
+            ).properties(
+                height=150
+            )
+
+            st.altair_chart(
+                ars_chart,
                 use_container_width=True
             )
 
             if usd_ars_rate:
-
                 st.metric(
                     "Patrimonio actual",
                     money_ars(equity * usd_ars_rate)
@@ -322,10 +392,15 @@ if history:
                 "cuando se registre una cotización válida."
             )
 
-    st.caption(
-        "Historial registrado por SAUL AI TRADER. "
-        "La conversión a ARS es estimativa."
-    )
+        st.caption(
+            "Historial registrado por SAUL AI TRADER. "
+            "La conversión a ARS es estimativa. "
+            "La escala vertical está ajustada para visualizar mejor las variaciones."
+        )
+
+    else:
+
+        st.info("Todavía no hay datos válidos para mostrar.")
 
 else:
 
