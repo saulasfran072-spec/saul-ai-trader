@@ -872,4 +872,8 @@ with tab_withdraw:
         "BROKER 1",
         "BROKER 2",
         "BROKER 3"
- 
+    ]
+
+    for broker in brokers:
+
+        with st.container(border=True):
