@@ -294,17 +294,11 @@ if history:
         usd_max = float(history_df["equity"].max())
         usd_padding = max((usd_max - usd_min) * 0.10, 1)
 
-        usd_chart = alt.Chart(history_df).mark_line(
-            strokeWidth=2
-        ).encode(
-            x=alt.X("timestamp:T", title=None),
-            y=alt.Y(
-                "equity:Q",
-                title="Patrimonio USD",
-                scale=alt.Scale(
-                    domain=[
-                        usd_min - usd_padding,
-                        usd_max + usd_padding
+        usd_chart = .mark_bar(
+    cornerRadiusTopLeft=4,
+    cornerRadiusTopRight=4,
+    size=12
+        )
                     ],
                     zero=False
                 )
