@@ -686,7 +686,11 @@ with tab_usd:
         if st.button("⛔ Desactivar piloto"):
             set_auto_pilot(False)
             st.rerun()
-
+     
+        if st.button("🟢 Activar piloto"):
+           set_auto_pilot(True)
+            st.rerun()
+   
     with b2:
 
         if st.button("🚨 PARADA DE EMERGENCIA"):
