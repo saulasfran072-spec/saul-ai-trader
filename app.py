@@ -19,6 +19,7 @@ from trading.database import (
     get_period_summary,
     set_auto_pilot,
     set_emergency_stop,
+    reset_account,
     get_protected_funds_summary,
     get_protected_funds_history,
     release_protected_funds,
@@ -288,8 +289,6 @@ if history:
 
     if not history_df.empty:
 
-        # GRÁFICO USD
-
         st.markdown("#### 💵 Patrimonio en USD")
 
         usd_chart = alt.Chart(history_df).mark_bar(
@@ -326,8 +325,6 @@ if history:
         )
 
         st.divider()
-
-        # GRÁFICO ARS
 
         st.markdown("#### 💱 Patrimonio en ARS")
 
@@ -407,7 +404,6 @@ else:
 st.divider()
 
 
-
 # ==========================================
 # NAVEGACIÓN PRINCIPAL
 # ==========================================
@@ -462,8 +458,6 @@ with tab_usd:
         )
 
     st.divider()
-
-    # FONDOS PROTEGIDOS
 
     st.subheader("🔒 Fondos protegidos")
 
@@ -552,8 +546,6 @@ with tab_usd:
 
     st.divider()
 
-    # MERCADOS
-
     st.subheader("🌎 Mercados")
 
     st.caption(
@@ -587,8 +579,6 @@ with tab_usd:
 
     st.divider()
 
-    # OPERACIONES
-
     st.subheader("📊 Operaciones abiertas")
 
     if details:
@@ -616,8 +606,6 @@ with tab_usd:
             st.info("Todavía no hay operaciones cerradas.")
 
     st.divider()
-
-    # CONTROL DE RIESGO
 
     st.subheader("🛡️ Control de riesgo")
 
@@ -655,8 +643,6 @@ with tab_usd:
 
     st.divider()
 
-    # CONFIGURACIÓN
-
     st.subheader("⚙️ Estado del sistema")
 
     s1, s2 = st.columns(2)
@@ -688,7 +674,7 @@ with tab_usd:
         if st.button("🟢 Activar piloto"):
             set_auto_pilot(True)
             st.rerun()
-       
+
         if st.button("🚨 PARADA DE EMERGENCIA"):
             set_emergency_stop(True)
             st.rerun()
@@ -702,6 +688,68 @@ with tab_usd:
     st.caption(
         "Quitar la parada de emergencia no activa el piloto automático."
     )
+
+    # ==========================================
+    # REINICIO TOTAL Y PROTEGIDO DE LA CUENTA
+    # ==========================================
+
+    st.divider()
+    st.subheader("♻️ Reinicio de cuenta")
+
+    st.warning(
+        "Esta acción es irreversible. Elimina todas las operaciones, "
+        "el historial de operaciones, los fondos protegidos y el historial "
+        "de patrimonio. Restablece el capital simulado a USD 10.000 y "
+        "desactiva el piloto automático y la parada de emergencia. "
+        "No elimina ni modifica el código de SAUL AI TRADER."
+    )
+
+    with st.expander("Abrir opciones de reinicio"):
+
+        st.write(
+            "Para evitar un reinicio accidental, escribí exactamente "
+            "**REINICIAR SAUL** en el campo de confirmación."
+        )
+
+        reset_phrase = st.text_input(
+            "Confirmación de seguridad",
+            key="reset_saul_confirmation",
+            placeholder="REINICIAR SAUL"
+        )
+
+        reset_button = st.button(
+            "♻️ REINICIAR TODA LA CUENTA",
+            type="primary",
+            disabled=(reset_phrase != "REINICIAR SAUL"),
+            key="reset_saul_button"
+        )
+
+        if reset_button:
+
+            try:
+                # Apaga primero los controles y luego limpia los registros.
+                set_auto_pilot(False)
+                set_emergency_stop(False)
+
+                success = reset_account(archive_history=False)
+
+                if success:
+                    # Evita que precios/cotizaciones cacheados confundan
+                    # la primera visualización después del reinicio.
+                    get_market_price.clear()
+                    get_dollar_rates.clear()
+
+                    st.session_state["reset_saul_confirmation"] = ""
+                    st.success(
+                        "Cuenta reiniciada. Capital simulado: USD 10.000. "
+                        "Operaciones, fondos protegidos e historiales en cero."
+                    )
+                    st.rerun()
+                else:
+                    st.error("No se pudo completar el reinicio.")
+
+            except Exception as exc:
+                st.error(f"Error durante el reinicio: {exc}")
 
 
 # ==========================================
@@ -821,91 +869,4 @@ with tab_withdraw:
     )
 
     brokers = [
-        "BROKER 1",
-        "BROKER 2",
-        "BROKER 3"
-    ]
-
-    for broker in brokers:
-
-        with st.container(border=True):
-
-            st.markdown(f"### 🏦 {broker}")
-
-            a, b, c = st.columns(3)
-
-            with a:
-                st.metric(
-                    "Saldo total",
-                    "Pendiente"
-                )
-
-            with b:
-                st.metric(
-                    "Disponible para retirar",
-                    "Pendiente"
-                )
-
-            with c:
-                st.metric(
-                    "Ganancias realizadas",
-                    "Pendiente"
-                )
-
-            st.warning("⚪ Broker sin conectar")
-
-            st.markdown("**🧠 Recomendación de SAUL AI:**")
-
-            st.info(
-                "Pendiente de conexión. "
-                "Se analizarán el saldo, las comisiones, "
-                "las operaciones abiertas y las condiciones "
-                "de retiro cuando se conecte la cuenta."
-            )
-
-    st.divider()
-
-    st.subheader("📊 Resumen general de retiros")
-
-    a, b = st.columns(2)
-
-    with a:
-        st.metric(
-            "Total disponible para retirar",
-            "Pendiente de conexión"
-        )
-
-    with b:
-        st.metric(
-            "Total de ganancias en brokers",
-            "Pendiente de conexión"
-        )
-
-    st.caption(
-        "SAUL AI TRADER podrá recomendar retiros, "
-        "pero nunca ejecutarlos sin autorización manual."
-    )
-
-
-# ==========================================
-# PIE DE PÁGINA
-# ==========================================
-
-st.divider()
-
-st.caption(
-    f"Capital inicial configurado: {money_usd(INITIAL_CAPITAL)}"
-)
-
-st.caption(
-    "SAUL AI TRADER V2 | Sistema de supervisión y análisis"
-)
-
-st.caption(
-    "SAUL AI TRADER V2 | Sistema de supervisión y análisis"
-)
-
-st.caption(
-    "Los resultados de esta versión son simulados "
-    "y no representan ganancias reales."
-)
+ 
