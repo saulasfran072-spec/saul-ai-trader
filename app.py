@@ -868,7 +868,7 @@ with tab_withdraw:
         "No se muestran saldos reales ni disponibilidad confirmada."
     )
 
-        brokers = [
+           brokers = [
         "BROKER 1",
         "BROKER 2",
         "BROKER 3"
@@ -877,4 +877,27 @@ with tab_withdraw:
     for broker in brokers:
 
         with st.container(border=True):
- 
+
+            st.markdown(f"### 🏦 {broker}")
+
+            a, b, c = st.columns(3)
+
+            with a:
+                st.metric("Saldo total", "Pendiente")
+
+            with b:
+                st.metric("Disponible para retirar", "Pendiente")
+
+            with c:
+                st.metric("Ganancias realizadas", "Pendiente")
+
+            st.warning("⚪ Broker sin conectar")
+
+            st.markdown("**🧠 Recomendación de SAUL AI:**")
+
+            st.info(
+                "Pendiente de conexión. "
+                "Se analizarán el saldo, las comisiones, "
+                "las operaciones abiertas y las condiciones "
+                "de retiro cuando se conecte la cuenta."
+) 
