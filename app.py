@@ -852,7 +852,6 @@ with tab_ars:
 # ==========================================
 # ESPACIO 3: LISTO PARA RETIRAR
 # ==========================================
-
 with tab_withdraw:
 
     st.subheader("🏦 Administración de brokers")
