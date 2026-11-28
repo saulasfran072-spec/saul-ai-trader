@@ -848,7 +848,6 @@ with tab_ars:
             "Se intentará nuevamente en la próxima actualización."
         )
 
-
 # ==========================================
 # ESPACIO 3: LISTO PARA RETIRAR
 # ==========================================
@@ -868,7 +867,7 @@ with tab_withdraw:
         "No se muestran saldos reales ni disponibilidad confirmada."
     )
 
-           brokers = [
+    brokers = [
         "BROKER 1",
         "BROKER 2",
         "BROKER 3"
@@ -900,4 +899,27 @@ with tab_withdraw:
                 "Se analizarán el saldo, las comisiones, "
                 "las operaciones abiertas y las condiciones "
                 "de retiro cuando se conecte la cuenta."
-) 
+            )
+
+    st.divider()
+
+    st.subheader("📊 Resumen general de retiros")
+
+    a, b = st.columns(2)
+
+    with a:
+        st.metric(
+            "Total disponible para retirar",
+            "Pendiente de conexión"
+        )
+
+    with b:
+        st.metric(
+            "Total de ganancias en brokers",
+            "Pendiente de conexión"
+        )
+
+    st.caption(
+        "SAUL AI TRADER podrá recomendar retiros, "
+        "pero nunca ejecutarlos sin autorización manual."
+    )
