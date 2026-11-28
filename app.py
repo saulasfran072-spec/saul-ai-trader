@@ -854,7 +854,7 @@ with tab_withdraw:
 
     st.subheader("🏦 Administración de brokers")
 
-    st.info(
+        st.info(
         "Este espacio permitirá supervisar los saldos, "
         "las ganancias y el dinero disponible para retirar "
         "en cada broker conectado."
@@ -871,7 +871,7 @@ with tab_withdraw:
         "BROKER 3"
     ]
 
-      for broker in brokers:
+    for broker in brokers:
 
         with st.container(border=True):
 
@@ -898,26 +898,3 @@ with tab_withdraw:
                 "las operaciones abiertas y las condiciones "
                 "de retiro cuando se conecte la cuenta."
             )
-
-    st.divider()
-
-    st.subheader("📊 Resumen general de retiros")
-
-    a, b = st.columns(2)
-
-    with a:
-        st.metric(
-            "Total disponible para retirar",
-            "Pendiente de conexión"
-        )
-
-    with b:
-        st.metric(
-            "Total de ganancias en brokers",
-            "Pendiente de conexión"
-        )
-
-    st.caption(
-        "SAUL AI TRADER podrá recomendar retiros, "
-        "pero nunca ejecutarlos sin autorización manual."
-    )
