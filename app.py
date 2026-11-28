@@ -856,7 +856,7 @@ with tab_withdraw:
 
     st.subheader("🏦 Administración de brokers")
 
-        st.info(
+    st.info(
         "Este espacio permitirá supervisar los saldos, "
         "las ganancias y el dinero disponible para retirar "
         "en cada broker conectado."
