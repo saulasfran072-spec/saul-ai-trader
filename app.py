@@ -847,11 +847,9 @@ with tab_ars:
             "No se pudieron obtener cotizaciones. "
             "Se intentará nuevamente en la próxima actualización."
         )
-
-    # ==========================================
+# ==========================================
 # ESPACIO 3: LISTO PARA RETIRAR
 # ==========================================
-
 with tab_withdraw:
 
     st.subheader("🏦 Administración de brokers")
@@ -873,7 +871,7 @@ with tab_withdraw:
         "BROKER 3"
     ]
 
-    for broker in brokers:
+      for broker in brokers:
 
         with st.container(border=True):
 
